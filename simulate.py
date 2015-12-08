@@ -5,6 +5,8 @@ import subprocess
 import shlex
 import time
 
+NAMD_COMMAND = '/opt/namd/namd2'
+
 eq_conf = """#############################################################
 ## ADJUSTABLE PARAMETERS                                   ##
 #############################################################
@@ -33,7 +35,7 @@ if {%(continue)s} {
 
 # Input
 paraTypeCharmm	    on
-parameters          ../../../common/par_all27_prot_na.prm
+parameters          ../../../../common/par_all27_prot_na.prm
 temperature         $temperature
 
 
@@ -97,7 +99,7 @@ if {1} {
 %(minimize)s
 reinitvels          $temperature
 
-run %(time)s ;# 50ps"""
+run %(time)s"""
 
 analyze_tcl = """
 mol new model1_protein_autopsf.psf type psf first 0 last -1 step 1 filebonds 1 autobonds 1 waitfor all
@@ -139,8 +141,16 @@ def runSimulation(parameters):
 	if not os.path.exists(parameters['folders'][2]):
 		os.makedirs(parameters['folders'][2])
 	os.chdir(parameters['folders'][2])
+	iteration = "1"
+	for i in range(1000):
+		iteration = str(i)
+		if not os.path.exists(iteration):
+			os.makedirs(iteration)
+			break
+	os.chdir(iteration)
+
 	with open('model1_protein.pdb','w') as f2:
-		with open('../../../model1_protein.pdb','r') as f:
+		with open('../../../../model1_protein.pdb','r') as f:
 			for line in f:
 				newline = line
 				if 'ATOM' in line:
@@ -152,13 +162,13 @@ def runSimulation(parameters):
 				else:
 					f2.write(line)
 	with open('eq1.conf','w') as f:
-		f.write(eq_conf % {'dielectric':str(parameters['dielectric']),
+		f.write(eq_conf % {'dielectric':"100.0",
 			'minimize':'minimize            50',
 			'continue':'0',
 			'input':'eq1',
 			'output':'eq1',
 			'temperature':'1000',
-			'time':str(1*500000)})
+			'time':str(int(0.1*500000))})
 	with open('eq2.conf','w') as f:
 		f.write(eq_conf % {'dielectric':str(parameters['dielectric']),
 			'minimize':'minimize            50',
@@ -166,17 +176,20 @@ def runSimulation(parameters):
 			'input':'eq1',
 			'output':'eq2',
 			'temperature':'310',
-			'time':str(10*500000)})
+			'time':str(int(0.3*500000))})
 	with open('analyze.tcl','w') as f:
 		f.write(analyze_tcl % {'residues': str(parameters['proteinFree'][0]) + ' to ' + str(parameters['proteinFree'][1])})
 
 
-	cmd = ['vmd','-dispdev','text','-e','../../../build.tcl']
+	cmd = ['vmd','-dispdev','text','-e','../../../../build.tcl']
 	print(cmd)
+	tstart = time.time()
 	p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
 	print "Building PSF"
 	out, err = p.communicate()
-	print "finished"
+	with open('build.log','w') as f:
+		f.write(out)
+	print "finished " + str(time.time()-tstart)
 	time.sleep(1)
 	with open('constraints.pdb','w') as f2:
 		with open('model1_protein_autopsf.pdb','r') as f:
@@ -192,19 +205,25 @@ def runSimulation(parameters):
 						f2.write(newline)
 				else:
 					f2.write(line)
-	cmd = ['/usr/local/bin/namd2','+p4',os.getcwd() + '/eq1.conf']
+	cmd = [NAMD_COMMAND,'+p4',os.getcwd() + '/eq1.conf']
 	print(cmd)
+	tstart = time.time()
 	p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
 	print "Running thermal denaturation"
 	out, err = p.communicate()
-	print "finished"
+	with open('eq1.log','w') as f:
+		f.write(out)
+	print "finished " + str(time.time()-tstart)
 
-	cmd = ['/usr/local/bin/namd2','+p4',os.getcwd() + '/eq2.conf']
+	cmd = [NAMD_COMMAND,'+p4',os.getcwd() + '/eq2.conf']
 	print(cmd)
+	tstart = time.time()
 	p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
 	print "Running folding simulation"
 	out, err = p.communicate()
-	print "finished"
+	with open('eq2.log','w') as f:
+		f.write(out)
+	print "finished " + str(time.time()-tstart)
 
 
 	cmd = ['vmd','-dispdev','text','-e','analyze.tcl']
@@ -212,6 +231,8 @@ def runSimulation(parameters):
 	p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
 	print "Running analysis"
 	out, err = p.communicate()
+	with open('analysis.log','w') as f:
+		f.write(out)
 	print "finished"
 
 
