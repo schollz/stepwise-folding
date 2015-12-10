@@ -4,6 +4,8 @@ import json
 import subprocess
 import shlex
 import time
+import random
+from multiprocessing import Pool
 
 NAMD_COMMAND = '/opt/namd/namd2'
 
@@ -67,11 +69,11 @@ dielectric	%(dielectric)s
 
 # Output
 outputName          $outputname
-restartfreq         50    ;# 5000steps = every 10ps
-dcdfreq             50
-xstFreq             10
-outputEnergies      5
-outputPressure      5
+restartfreq         5000    ;# 5000steps = every 10ps
+dcdfreq             5000
+xstFreq             1000
+outputEnergies      500
+outputPressure      500
 
 
 #############################################################
@@ -132,21 +134,35 @@ exit
 """
 
 def runSimulation(parameters):
+	time.sleep(float( random.randint(1000,30000)/1000.0))
+	os.chdir(parameters['currentDir'])
 	if not os.path.exists(parameters['folders'][0]):
-		os.makedirs(parameters['folders'][0])
+		try:
+			os.makedirs(parameters['folders'][0])
+		except:
+			pass
 	os.chdir(parameters['folders'][0])
 	if not os.path.exists(parameters['folders'][1]):
-		os.makedirs(parameters['folders'][1])
+		try:
+			os.makedirs(parameters['folders'][1])
+		except:
+			pass
 	os.chdir(parameters['folders'][1])
 	if not os.path.exists(parameters['folders'][2]):
-		os.makedirs(parameters['folders'][2])
+		try:
+			os.makedirs(parameters['folders'][2])
+		except:
+			pass
 	os.chdir(parameters['folders'][2])
 	iteration = "1"
 	for i in range(1000):
 		iteration = str(i)
 		if not os.path.exists(iteration):
-			os.makedirs(iteration)
-			break
+			try:
+				os.makedirs(iteration) 
+				break
+			except:
+				pass
 	os.chdir(iteration)
 
 	with open('model1_protein.pdb','w') as f2:
@@ -168,7 +184,7 @@ def runSimulation(parameters):
 			'input':'eq1',
 			'output':'eq1',
 			'temperature':'1000',
-			'time':str(int(0.1*500000))})
+			'time':str(int(0.03*500000))})
 	with open('eq2.conf','w') as f:
 		f.write(eq_conf % {'dielectric':str(parameters['dielectric']),
 			'minimize':'minimize            50',
@@ -176,12 +192,12 @@ def runSimulation(parameters):
 			'input':'eq1',
 			'output':'eq2',
 			'temperature':'310',
-			'time':str(int(0.3*500000))})
+			'time':str(int(0.2*500000))})
 	with open('analyze.tcl','w') as f:
 		f.write(analyze_tcl % {'residues': str(parameters['proteinFree'][0]) + ' to ' + str(parameters['proteinFree'][1])})
 
 
-	cmd = ['vmd','-dispdev','text','-e','../../../../build.tcl']
+	cmd = ['vmd','-dispdev','text','-e','../../../../build.tcl'] 
 	print(cmd)
 	tstart = time.time()
 	p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
@@ -205,7 +221,7 @@ def runSimulation(parameters):
 						f2.write(newline)
 				else:
 					f2.write(line)
-	cmd = [NAMD_COMMAND,'+p4',os.getcwd() + '/eq1.conf']
+	cmd = [NAMD_COMMAND,'+p1',os.getcwd() + '/eq1.conf']
 	print(cmd)
 	tstart = time.time()
 	p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
@@ -215,7 +231,7 @@ def runSimulation(parameters):
 		f.write(out)
 	print "finished " + str(time.time()-tstart)
 
-	cmd = [NAMD_COMMAND,'+p4',os.getcwd() + '/eq2.conf']
+	cmd = [NAMD_COMMAND,'+p1',os.getcwd() + '/eq2.conf']
 	print(cmd)
 	tstart = time.time()
 	p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
@@ -237,15 +253,20 @@ def runSimulation(parameters):
 
 
 if __name__ == "__main__":
-	parameters = {}
-	parameters['proteinFull'] = [int(sys.argv[1].split('-')[0]),int(sys.argv[1].split('-')[1])]
-	parameters['proteinFree'] = [int(sys.argv[2].split('-')[0]),int(sys.argv[2].split('-')[1])]
-	parameters['dielectric'] = float(sys.argv[3])
-	parameters['folders'] = [sys.argv[1]]
-	parameters['folders'].append(sys.argv[2])
-	parameters['folders'].append(str(float(sys.argv[3])))
-	parameters['currentDir'] = os.getcwd()
-	print(json.dumps(parameters,indent=2))
-	runSimulation(parameters)
+	allParameters = []
+	for i in range(80,540,5):
+		parameters = {}
+		parameters['proteinFull'] = [1,i]
+		parameters['proteinFree'] = [i-15,i]
+		parameters['dielectric'] = 0.75
+		parameters['folders'] = ["1-"+ str(i)]
+		parameters['folders'].append(str(i-15) + "-" + str(i))
+		parameters['folders'].append(str(float(parameters['dielectric'])))
+		parameters['currentDir'] = os.getcwd()
+		for j in range(2):
+			allParameters.append(parameters)
+	#runSimulation(parameters)
+	p = Pool(62)
+	p.map(runSimulation,allParameters)
 
 
