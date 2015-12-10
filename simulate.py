@@ -6,8 +6,14 @@ import shlex
 import time
 import random
 from multiprocessing import Pool
+import logging
+logging.basicConfig(level=logging.DEBUG,
+                    format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
+                    datefmt='%m-%d %H:%M',
+                    filename='log',
+                    filemode='w')
 
-NAMD_COMMAND = '/opt/namd/namd2'
+NAMD_COMMAND = 'namd2'
 
 eq_conf = """#############################################################
 ## ADJUSTABLE PARAMETERS                                   ##
@@ -164,7 +170,9 @@ def runSimulation(parameters):
 			except:
 				pass
 	os.chdir(iteration)
+	logger = logging.getLogger(os.getcwd())
 
+	logger.debug('loading model1_protein')
 	with open('model1_protein.pdb','w') as f2:
 		with open('../../../../model1_protein.pdb','r') as f:
 			for line in f:
@@ -184,7 +192,7 @@ def runSimulation(parameters):
 			'input':'eq1',
 			'output':'eq1',
 			'temperature':'1000',
-			'time':str(int(0.03*500000))})
+			'time':str(int(0.008*500000))})
 	with open('eq2.conf','w') as f:
 		f.write(eq_conf % {'dielectric':str(parameters['dielectric']),
 			'minimize':'minimize            50',
@@ -192,20 +200,20 @@ def runSimulation(parameters):
 			'input':'eq1',
 			'output':'eq2',
 			'temperature':'310',
-			'time':str(int(0.2*500000))})
+			'time':str(int(0.02*500000))})
 	with open('analyze.tcl','w') as f:
 		f.write(analyze_tcl % {'residues': str(parameters['proteinFree'][0]) + ' to ' + str(parameters['proteinFree'][1])})
 
 
 	cmd = ['vmd','-dispdev','text','-e','../../../../build.tcl'] 
-	print(cmd)
+	logger.info(cmd)
 	tstart = time.time()
 	p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-	print "Building PSF"
+	logger.info("Building PSF")
 	out, err = p.communicate()
 	with open('build.log','w') as f:
 		f.write(out)
-	print "finished " + str(time.time()-tstart)
+	logger.debug("finished building PSF " + str(time.time()-tstart))
 	time.sleep(1)
 	with open('constraints.pdb','w') as f2:
 		with open('model1_protein_autopsf.pdb','r') as f:
@@ -221,40 +229,49 @@ def runSimulation(parameters):
 						f2.write(newline)
 				else:
 					f2.write(line)
-	cmd = [NAMD_COMMAND,'+p1',os.getcwd() + '/eq1.conf']
-	print(cmd)
-	tstart = time.time()
-	p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-	print "Running thermal denaturation"
-	out, err = p.communicate()
-	with open('eq1.log','w') as f:
-		f.write(out)
-	print "finished " + str(time.time()-tstart)
 
-	cmd = [NAMD_COMMAND,'+p1',os.getcwd() + '/eq2.conf']
-	print(cmd)
-	tstart = time.time()
-	p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-	print "Running folding simulation"
-	out, err = p.communicate()
-	with open('eq2.log','w') as f:
-		f.write(out)
-	print "finished " + str(time.time()-tstart)
 
+	cmd = 'nohup /opt/namd/charmrun +p4 /opt/namd/namd2 eq1.conf > eq1.log &'
+	cmd = 'nohup charmrun +p4 namd2 eq1.conf > eq1.log &'
+	logger.debug(cmd)
+	os.system('nohup charmrun +p4 namd2 eq1.conf > eq1.log &')
+	lastStat = ""
+	tstart = time.time()
+	while True:
+		time.sleep(10)
+		newStat = os.stat('eq1.log').st_mtime
+		if lastStat == newStat:
+			break
+		lastStat = newStat
+		logger.debug(lastStat)
+	logger.debug("finished thermal denaturation " + str(time.time()-tstart))
+
+	cmd = 'nohup /opt/namd/charmrun +p4 /opt/namd/namd2 eq1.conf > eq1.log &'
+	cmd = 'nohup charmrun +p4 namd2 eq2.conf > eq2.log &'
+	logger.debug(cmd)
+	os.system('nohup charmrun +p4 namd2 eq1.conf > eq2.log &')
+	lastStat = ""
+	tstart = time.time()
+	while True:
+		time.sleep(10)
+		newStat = os.stat('eq2.log').st_mtime
+		if lastStat == newStat:
+			break
+		lastStat = newStat
+		logger.debug(lastStat)
+	logger.debug("finished simulation " + str(time.time()-tstart))
 
 	cmd = ['vmd','-dispdev','text','-e','analyze.tcl']
-	print(cmd)
 	p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-	print "Running analysis"
 	out, err = p.communicate()
 	with open('analysis.log','w') as f:
 		f.write(out)
-	print "finished"
+	logger.debug('finished analsysi')
 
 
 if __name__ == "__main__":
 	allParameters = []
-	for i in range(80,540,5):
+	for i in range(80,540,300):
 		parameters = {}
 		parameters['proteinFull'] = [1,i]
 		parameters['proteinFree'] = [i-15,i]
@@ -265,8 +282,8 @@ if __name__ == "__main__":
 		parameters['currentDir'] = os.getcwd()
 		for j in range(2):
 			allParameters.append(parameters)
-	#runSimulation(parameters)
-	p = Pool(62)
-	p.map(runSimulation,allParameters)
+	runSimulation(parameters)
+	#p = Pool(62)
+	#p.map(runSimulation,allParameters)
 
 
